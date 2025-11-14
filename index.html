@@ -38,12 +38,49 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        /* API 키 모달 스타일 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.75);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+        }
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 0.75rem;
+            max-width: 500px;
+            width: 90%;
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 min-h-screen flex items-center justify-center p-4 font-inter">
 
     <div id="app" class="w-full max-w-3xl bg-white shadow-2xl rounded-2xl p-6 md:p-10 transition-all duration-500">
         
+        <!-- [NEW] API 키 입력 모달 -->
+        <div v-if="showApiKeyModal" class="modal-overlay">
+            <div class="modal-content shadow-xl">
+                <h2 class="text-2xl font-bold mb-4">Gemini API 키 입력</h2>
+                <p class="text-gray-600 mb-6">API를 사용하려면 Gemini API 키를 입력해주세요. 키는 브라우저 쿠키에 저장됩니다.</p>
+                <input 
+                    type="password" 
+                    v-model="apiKeyInput"
+                    @keyup.enter="saveApiKey"
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
+                    placeholder="ここにAPIキーを入力...">
+                <div class="mt-6 flex justify-end space-x-4">
+                    <button @click="saveApiKey" class="px-6 py-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 font-semibold">저장</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 로딩 화면 -->
         <div v-if="isLoading" class="flex flex-col items-center justify-center min-h-[300px]">
             <div class="loader"></div>
@@ -130,7 +167,7 @@
                     </button>
                     <!-- [MODIFIED] '해설 보기' 버튼을 'AI 해설 보기'로 변경 -->
                     <button @click="requestAiExplanation" :disabled="isAiLoading" class="w-full px-6 py-4 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition-all duration-300 font-bold text-lg flex items-center justify-center">
-                        <svg v-if="isAiLoading && !aiExplanation" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <svg vif="isAiLoading && !aiExplanation" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -155,6 +192,11 @@
                 <div id="ai-explanation-content" class="text-gray-800 space-y-2" v-html="aiExplanation"></div>
             </div>
         </main>
+
+        <!-- [NEW] API 키 관리 버튼 -->
+        <div class="mt-8 text-center">
+            <button @click="clearApiKey" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">API 키 초기화</button>
+        </div>
     </div>
 
     <script type="module">
@@ -176,8 +218,10 @@
                 const appState = ref('solving'); // 앱 상태 (solving, answered, finished)
                 const currentLevel = ref(3.0); // 학생의 현재 레벨 (1~5)
                 const answeredProblems = ref(new Set()); // 푼 문제 ID Set
-                // [REMOVED]
-                // const showExplanationContent = ref(false); // 해설 표시 여부
+                
+                // [NEW] API 키 관련 상태
+                const showApiKeyModal = ref(false);
+                const apiKeyInput = ref('');
 
                 // AI 관련 상태
                 const isAiLoading = ref(false); // AI 응답 로딩 여
@@ -190,11 +234,49 @@
                     return (answeredProblems.value.size / allProblems.value.length) * 100;
                 });
 
+                // --- [NEW] 쿠키 헬퍼 함수 ---
+                const setCookie = (name, value, days) => {
+                    let expires = "";
+                    if (days) {
+                        const date = new Date();
+                        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                        expires = "; expires=" + date.toUTCString();
+                    }
+                    document.cookie = name + "=" + (value || "") + expires + "; path=/; SameSite=Lax; Secure";
+                };
+
+                const getCookie = (name) => {
+                    const nameEQ = name + "=";
+                    const ca = document.cookie.split(';');
+                    for(let i = 0; i < ca.length; i++) {
+                        let c = ca[i];
+                        while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+                        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+                    }
+                    return null;
+                };
+
+                const eraseCookie = (name) => {
+                    document.cookie = name + '=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+                };
+
+
                 // --- Gemini API 호출 로직 ---
                 const callGeminiAPI = async (userPrompt, systemPrompt, retries = 3, delay = 1000) => {
                     isAiLoading.value = true;
-                    const apiKey = ""; // API 키 (비워둠)
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                    
+                    // [MODIFIED] 쿠키에서 API 키 가져오기
+                    const apiKey = getCookie("geminiApiKey");
+                    
+                    // [MODIFIED] API 키가 없으면 모달 표시
+                    if (!apiKey) {
+                        showApiKeyModal.value = true;
+                        isAiLoading.value = false;
+                        feedback.value = "Gemini API 키를 먼저 입력해주세요.";
+                        return "API 키가 필요합니다.";
+                    }
+
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
                     const payload = {
                         contents: [{ parts: [{ text: userPrompt }] }],
@@ -211,6 +293,12 @@
                         });
 
                         if (!response.ok) {
+                            if (response.status === 400) { // 400 Bad Request (잘못된 API 키 등)
+                                eraseCookie("geminiApiKey"); // 잘못된 키 삭제
+                                showApiKeyModal.value = true;
+                                feedback.value = "잘못된 API 키입니다. 다시 입력해주세요.";
+                                return "잘못된 API 키";
+                            }
                             if (response.status === 429 && retries > 0) { // 429: Too Many Requests
                                 console.warn(`API rate limit. Retrying in ${delay / 1000}s... (${retries} retries left)`);
                                 await new Promise(res => setTimeout(res, delay));
@@ -225,17 +313,41 @@
                         if (candidate && candidate.content?.parts?.[0]?.text) {
                             return candidate.content.parts[0].text;
                         } else {
+                            // [MODIFIED] API 응답 구조 오류에 대한 구체적인 피드백
+                            console.error("Unexpected API response structure:", result);
+                            if (result.error) {
+                                return `API 오류: ${result.error.message}`;
+                            }
                             throw new Error("API로부터 유효한 텍스트 응답을 받지 못했습니다.");
                         }
                     } catch (error) {
                         console.error("Gemini API 호출 오류:", error);
-                        return "AI 응답을 가져오는 데 실패했습니다. 네트워크 연결을 확인해 주세요.";
+                        return "AI 응답을 가져오는 데 실패했습니다. 네트워크 연결 또는 API 키를 확인해 주세요.";
                     } finally {
                         isAiLoading.value = false;
                     }
                 };
 
                 // --- 메서드 (Methods) ---
+
+                // [NEW] API 키 저장
+                const saveApiKey = () => {
+                    if (apiKeyInput.value.trim()) {
+                        setCookie("geminiApiKey", apiKeyInput.value.trim(), 30); // 30일간 저장
+                        showApiKeyModal.value = false;
+                        apiKeyInput.value = '';
+                        feedback.value = "API 키가 저장되었습니다. 이제 AI 기능을 사용할 수 있습니다.";
+                    } else {
+                        feedback.value = "API 키를 입력해주세요.";
+                    }
+                };
+
+                // [NEW] API 키 삭제
+                const clearApiKey = () => {
+                    eraseCookie("geminiApiKey");
+                    showApiKeyModal.value = true;
+                    feedback.value = "API 키가 삭제되었습니다. 새로 입력해주세요.";
+                };
 
                 // KaTeX 수학 공식 렌더링 함수
                 const renderMathematics = () => {
@@ -390,7 +502,9 @@
                     `;
                     // [MODIFIED] AI의 Markdown 응답을 HTML로 파싱
                     const rawMarkdown = await callGeminiAPI(userPrompt, systemPrompt);
-                    aiHint.value = marked.parse(rawMarkdown || "");
+                    if (rawMarkdown !== "API 키가 필요합니다." && rawMarkdown !== "잘못된 API 키") {
+                        aiHint.value = marked.parse(rawMarkdown || "");
+                    }
                     
                     aiExplanation.value = ''; // 다른 섹션 초기화
                     // [REMOVED]
@@ -416,11 +530,18 @@
                     `;
                     // [MODIFIED] AI의 Markdown 응답을 HTML로 파싱
                     const rawMarkdown = await callGeminiAPI(userPrompt, systemPrompt);
-                    aiExplanation.value = marked.parse(rawMarkdown || "");
+                     if (rawMarkdown !== "API 키가 필요합니다." && rawMarkdown !== "잘못된 API 키") {
+                        aiExplanation.value = marked.parse(rawMarkdown || "");
+                    }
                 };
 
                 // --- 생명주기 (Lifecycle) ---
                 onMounted(() => {
+                    // [MODIFIED] 앱 시작 시 API 키 확인
+                    if (!getCookie("geminiApiKey")) {
+                        showApiKeyModal.value = true;
+                    }
+
                     // KaTeX가 로드되었는지 확인
                     const checkKatex = () => {
                         if (window.renderMathInElement) {
@@ -453,8 +574,8 @@
                     currentLevel,
                     answeredProblems,
                     allProblems,
-                    // [REMOVED]
-                    // showExplanationContent,
+                    showApiKeyModal,
+                    apiKeyInput,
                     isAiLoading,
                     aiHint,
                     aiExplanation,
@@ -466,10 +587,10 @@
                     loadProblems,
                     selectNextProblem,
                     submitAnswer,
-                    // [REMOVED]
-                    // showExplanation,
                     requestAiHint,
-                    requestAiExplanation
+                    requestAiExplanation,
+                    saveApiKey,
+                    clearApiKey
                 };
             }
         }).mount('#app');
