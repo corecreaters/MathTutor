@@ -3,594 +3,864 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vue.js 적응형 수학 튜터 (Gemini API)</title>
-    <!-- Tailwind CSS CDN -->
+    <title>AI 맞춤형 수학 문제 풀이</title>
+    
+    <!-- 1. Tailwind CSS 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Vue 3 CDN -->
+    
+    <!-- 2. Vue.js 로드 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <!-- KaTeX CDN (수학 공식 렌더링) -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" xintegrity="sha384-sM5DpostPRinVMVMyOTTsDhpBYPbCgBqG/IPhA+M+AVeEGLuL/fLImgO+kBCXmL5" crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js" xintegrity="sha384-hIoIeSUdaeBIfIPph+VbHnIaMVC4UaCDB/P+6iAoI2H+RmsjAFzQuEEVs4jGnmTM" crossorigin="anonymous"></script>
-    <!-- KaTeX Auto-render Axtension -->
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js" xintegrity="sha384-4trT/hBKaI8D8sXGyOTrH/M/22jKx/A/bVDirI3/jnoHWdAGQCBvNfHlM+yLIndr" crossorigin="anonymous"></script>
-    <!-- [NEW] Marked.js CDN (Markdown to HTML) -->
-    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/lib/marked.umd.min.js"></script>
-
+    
+    <!-- [FIX-2] 3. Markdown 파서 (marked.js) 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- [FIX-1] 4. MathJax (LaTeX 수식 렌더링) 설정 -->
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']] // $...$ 를 인라인 수식으로 명시적 설정
+        },
+        startup: {
+          ready: () => {
+            // console.log('MathJax is ready!'); // 디버깅용
+            MathJax.startup.defaultReady();
+          }
+        }
+      };
+    </script>
+    <!-- 5. MathJax 스크립트 로드 -->
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
     <style>
-        /* 기본 Inter 폰트 설정 */
+        /* 기본 폰트 및 배경 설정 */
         body {
             font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Tailwind bg-gray-100 */
         }
-        /* KaTeX 폰트 크기 조정 */
-        .katex {
-            font-size: 1.1em;
+        /* MathJax 로드 전 깜빡임 방지 */
+        .mathjax-container {
+            min-height: 5em; /* 문제 영역의 최소 높이 확보 */
         }
-        /* 로딩 스피너 */
-        .loader {
-            border: 4px solid #f3f3f3; /* Light grey */
-            border-top: 4px solid #3498db; /* Blue */
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        /* API 키 모달 스타일 */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(0, 0, 0, 0.75);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 999;
-        }
-        .modal-content {
-            background: white;
-            padding: 2rem;
-            border-radius: 0.75rem;
-            max-width: 500px;
-            width: 90%;
+        #drawing-canvas {
+            touch-action: none; /* 모바일에서 캔버스 터치 시 페이지 스크롤 방지 */
+            transition: height 0.3s ease; /* 캔버스 높이 변경 시 부드러운 전환 */
         }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800 min-h-screen flex items-center justify-center p-4 font-inter">
-
-    <div id="app" class="w-full max-w-3xl bg-white shadow-2xl rounded-2xl p-6 md:p-10 transition-all duration-500">
+<body class="antiasaed">
+    <div id="app" class="container mx-auto max-w-4xl p-4 sm:p-8 min-h-screen">
         
-        <!-- [NEW] API 키 입력 모달 -->
-        <div v-if="showApiKeyModal" class="modal-overlay">
-            <div class="modal-content shadow-xl">
-                <h2 class="text-2xl font-bold mb-4">Gemini API 키 입력</h2>
-                <p class="text-gray-600 mb-6">API를 사용하려면 Gemini API 키를 입력해주세요. 키는 브라우저 쿠키에 저장됩니다.</p>
-                <input 
-                    type="password" 
-                    v-model="apiKeyInput"
-                    @keyup.enter="saveApiKey"
-                    class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
-                    placeholder="여기에 API 키를 입력하세요...">
-                <div class="mt-6 flex justify-end space-x-4">
-                    <button @click="saveApiKey" class="px-6 py-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 font-semibold">저장</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- 로딩 화면 -->
-        <div v-if="isLoading" class="flex flex-col items-center justify-center min-h-[300px]">
-            <div class="loader"></div>
-            <p class="mt-4 text-lg text-gray-600">문제 데이터를 불러오는 중...</p>
-        </div>
-
-        <!-- 학습 완료 화면 -->
-        <div v-else-if="appState === 'finished'" class="text-center min-h-[300px] flex flex-col justify-center">
-            <h2 class="text-3xl font-bold text-blue-600 mb-4">학습 완료!</h2>
-            <p class="text-xl text-gray-700">모든 문제를 다 풀었습니다. 대단해요!</p>
-            <p class="mt-2 text-lg">최종 레벨: <span class="font-bold text-blue-500">{{ currentLevel.toFixed(1) }}</span></p>
-            <button @click="loadProblems" class="mt-8 inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-colors duration-300 font-semibold">
-                다시 풀기
-            </button>
-        </div>
-
-        <!-- 튜터 메인 화면 -->
-        <main v-else-if="currentProblem" :key="currentProblem.id" class="transition-all duration-300">
-            <!-- 1. 학습 진행률 -->
-            <div class="mb-6">
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm font-medium text-blue-700">진행률 ({{ answeredProblems.size }} / {{ allProblems.length }})</span>
-                    <span class="text-sm font-medium text-gray-600">현재 레벨: <span class="font-bold text-blue-600">{{ currentLevel.toFixed(1) }}</span></span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2.5">
-                    <div class="bg-blue-600 h-2.5 rounded-full" :style="{ width: progressPercentage + '%' }"></div>
-                </div>
-            </div>
-
-            <!-- 2. 문제 섹션 -->
-            <div class="border border-gray-200 rounded-lg p-5 mb-6 shadow-sm bg-gray-50">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-semibold rounded-full">{{ currentProblem.category }}</span>
-                    <span class="px-3 py-1 bg-gray-200 text-gray-700 text-sm font-semibold rounded-full">난이도: {{ currentProblem.difficulty }}</span>
-                </div>
-                <h2 class="text-2xl font-semibold mb-4 text-gray-900">문제 #{{ currentProblem.id }}</h2>
-                <!-- KaTeX가 렌더링할 컨텐츠 -->
-                <div id="question-content" class="text-lg leading-relaxed space-y-2" v-html="currentProblem.question"></div>
-            </div>
-
-            <!-- 3. 답변 입력 섹션 -->
-            <div class="mb-6">
-                <label for="answer" class="block text-lg font-semibold mb-3 text-gray-700">여러분의 답:</label>
-                <input 
-                    type="text" 
-                    id="answer" 
-                    v-model="userAnswer" 
-                    @keyup.enter="submitAnswer"
-                    :disabled="appState !== 'solving'"
-                    class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
-                    placeholder="정답을 입력하세요...">
-            </div>
-
-            <!-- 4. 피드백 및 버튼 -->
-            <div class="min-h-[50px] mb-6">
-                <!-- 피드백 메시지 -->
-                <p v-if="feedback" 
-                   :class="isCorrect ? 'text-green-600' : 'text-red-600'" 
-                   class="text-lg font-semibold text-center p-3 rounded-lg"
-                   v-html="feedback">
+        <!-- 1. API 키 입력 화면 (isApiKeySet이 false일 때) -->
+        <div v-if="!isApiKeySet" class="flex items-center justify-center min-h-[80vh]">
+            <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
+                <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">시작하기</h2>
+                <p class="text-center text-gray-600 mb-6">
+                    Gemini API 키를 입력해주세요. 이 키는 서버에 저장되지 않고, 오직 당신의 브라우저 쿠키에만 안전하게 보관됩니다.
                 </p>
+                <div class="space-y-4">
+                    <input 
+                        type="password" 
+                        v-model="apiKeyInput"
+                        placeholder="Gemini API 키를 여기에 붙여넣으세요"
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    >
+                    <button 
+                        @click="setApiKey"
+                        class="w-full bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition transform hover:-translate-y-0.5"
+                    >
+                        시작하기
+                    </button>
+                </div>
             </div>
+        </div>
 
-            <!-- 버튼 그룹 -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- 문제 풀이 중 버튼 -->
-                <template v-if="appState === 'solving'">
-                    <button @click="submitAnswer" class="w-full px-6 py-4 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-all duration-300 font-bold text-lg">
-                        제출하기
-                    </button>
-                    <button @click="requestAiHint" :disabled="isAiLoading" class="w-full px-6 py-4 bg-gray-700 text-white rounded-lg shadow-md hover:bg-gray-800 transition-all duration-300 font-bold text-lg flex items-center justify-center">
-                        <svg v-if="isAiLoading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        {{ isAiLoading ? '힌트 생성 중...' : '✨ AI 힌트 요청' }}
-                    </button>
-                </template>
+        <!-- 2. 메인 앱 화면 (isApiKeySet이 true일 때) -->
+        <div v-else class="space-y-8">
+            <header class="flex justify-between items-center">
+                <h1 class="text-4xl font-extrabold text-blue-700">
+                    AI 맞춤형 수학 챌린지
+                </h1>
+                <button @click="clearApiKey" class="text-sm text-gray-500 hover:text-red-600 transition">API 키 변경</button>
+            </header>
 
-                <!-- 정답/오답 후 버튼 -->
-                <template v-if="appState === 'answered'">
-                    <button @click="selectNextProblem" class="w-full px-6 py-4 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-all duration-300 font-bold text-lg">
-                        다음 문제
+            <!-- 2.1. 카테고리 선택 화면 -->
+            <section v-if="!currentProblem" class="bg-white p-8 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">학습할 단원을 선택하세요</h2>
+                <div v-if="problems.length === 0" class="text-center text-gray-500">
+                    문제 데이터를 불러오는 중입니다...
+                </div>
+                <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                        v-for="cat in availableCategories"
+                        :key="cat"
+                        @click="startQuiz(cat)"
+                        class="p-6 border border-gray-200 rounded-lg text-left hover:shadow-md hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    >
+                        <span class="text-xl font-semibold text-gray-700">{{ cat }}</span>
+                        <div class="text-sm text-gray-500 mt-1">
+                            현재 ELO 점수: <span class="font-bold text-blue-600">{{ userRatings[cat] }} / 5</span>
+                        </div>
                     </button>
-                    <!-- [MODIFIED] '해설 보기' 버튼을 'AI 해설 보기'로 변경 -->
-                    <button @click="requestAiExplanation" :disabled="isAiLoading" class="w-full px-6 py-4 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition-all duration-300 font-bold text-lg flex items-center justify-center">
-                        <svg vif="isAiLoading && !aiExplanation" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        {{ (isAiLoading && !aiExplanation) ? '해설 생성 중...' : '✨ AI 해설 보기' }}
-                    </button>
-                </template>
-            </div>
+                </div>
+            </section>
 
-            <!-- 5. 힌트 및 해설 섹션 -->
-            <!-- AI 힌트 (AI가 생성) -->
-            <div v-if="aiHint" class="mt-6 p-5 border border-purple-200 bg-purple-50 rounded-lg shadow-sm">
-                <h3 class="text-lg font-bold text-purple-700 mb-3">✨ AI 힌트</h3>
-                <div id="hint-content" class="text-gray-800 space-y-2" v-html="aiHint"></div>
-            </div>
-            
-            <!-- [REMOVED] 정적 해설 (데이터에서 로드) -->
-            <!-- <div v-if="showExplanationContent" ... > ... </div> -->
+            <!-- 2.2. 문제 풀이 화면 -->
+            <section v-if="currentProblem" class="bg-white p-6 sm:p-8 rounded-xl shadow-lg space-y-6">
+                <!-- 문제 정보 및 뒤로 가기 -->
+                <div class="flex justify-between items-center mb-4">
+                    <button @click="currentProblem = null" class="text-blue-600 hover:text-blue-800 transition">
+                        &larr; 단원 선택으로
+                    </button>
+                    <span class="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                        {{ currentProblem.category }} (문제 난이도: {{ currentProblem.difficulty }})
+                    </span>
+                </div>
                 
-            <!-- [MODIFIED] AI 추가 해설 -> AI 해설 (AI가 생성) -->
-            <div v-if="aiExplanation" class="mt-6 p-5 border border-green-200 bg-green-50 rounded-lg shadow-sm">
-                <h3 class="text-lg font-bold text-green-700 mb-3">✨ AI 해설</h3>
-                <div id="ai-explanation-content" class="text-gray-800 space-y-2" v-html="aiExplanation"></div>
-            </div>
-        </main>
+                <!-- 문제 표시 (MathJax 렌더링) -->
+                <div 
+                    ref="problemContainer" 
+                    class="text-xl text-gray-800 leading-relaxed border-b pb-6 mathjax-container"
+                >
+                    <!-- v-html 제거됨. 수식이 여기에 렌더링됩니다 -->
+                </div>
 
-        <!-- [NEW] API 키 관리 버튼 -->
-        <div class="mt-8 text-center">
-            <button @click="clearApiKey" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">API 키 초기화</button>
+                <!-- 필기 영역 -->
+                <div class="space-y-2">
+                    <h3 class="text-lg font-semibold text-gray-700">풀이 과정 필기</h3>
+                    <div class="relative w-full border-2 border-dashed border-gray-300 rounded-lg">
+                        <canvas 
+                            id="drawing-canvas" 
+                            class="w-full bg-gray-50 rounded-lg"
+                            :style="{ height: canvasHeight + 'px' }"
+                        ></canvas>
+                        <div class="absolute top-2 right-2 flex flex-wrap gap-2 justify-end">
+                            <button 
+                                @click="toggleEraser" 
+                                :class="isEraser ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'" 
+                                class="px-3 py-1 rounded-md text-sm hover:bg-gray-300 transition"
+                            >
+                                {{ isEraser ? '펜' : '지우개' }}
+                            </button>
+                            <button @click="expandCanvas" class="px-3 py-1 bg-blue-100 text-blue-700 rounded-md text-sm hover:bg-blue-200 transition">
+                                늘리기
+                            </button>
+                            <button @click="clearCanvas" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md text-sm hover:bg-gray-300 transition">&times; 지우기</button>
+                            <button @click="getCanvasFeedback" :disabled="isLoading" class="px-3 py-1 bg-green-500 text-white rounded-md text-sm hover:bg-green-600 transition disabled:opacity-50">
+                                <span v-if="!isLoading">내 풀이 피드백 받기</span>
+                                <span v-else>분석 중...</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 정답 입력 영역 -->
+                <div class="space-y-4">
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <input
+                            type="text"
+                            v-model="userAnswer"
+                            :disabled="isAnswerDisabled"
+                            @keyup.enter="submitAnswer"
+                            placeholder="정답을 입력하세요 (예: -4)"
+                            class="flex-grow px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition disabled:bg-gray-100"
+                        >
+                        <button
+                            @click="submitAnswer"
+                            :disabled="isAnswerDisabled"
+                            class="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition disabled:opacity-50"
+                        >
+                            <span v-if="attemptCount === 0">제출하기</span>
+                            <span v-else>다시 제출하기</span>
+                        </button>
+                    </div>
+                    
+                    <!-- 피드백 메시지 -->
+                    <div v-if="feedback" :class="feedbackClass" class="text-center font-medium p-3 rounded-lg">
+                        {{ feedback }}
+                    </div>
+                </div>
+
+                <!-- 힌트 / 해설 / 다음 문제 버튼 영역 -->
+                <div class="border-t pt-6 space-y-4">
+                    <!-- 로딩 스피너 -->
+                    <div v-if="isLoading" class="flex justify-center items-center space-x-2 text-gray-500">
+                        <svg class="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>AI가 응답을 생성 중입니다...</span>
+                    </div>
+
+                    <!-- Gemini 응답 (힌트/해설) -->
+                    <div 
+                        v-if="geminiResponse" 
+                        ref="geminiContainer"
+                        class="p-4 bg-gray-50 border border-gray-200 rounded-lg leading-relaxed mathjax-container"
+                    >
+                        <!-- v-html 제거됨. AI 응답이 여기에 렌더링됩니다 -->
+                    </div>
+
+                    <!-- 상황별 버튼 -->
+                    <div class="flex flex-wrap gap-2">
+                        <!-- 1차 시도 실패 시 -->
+                        <button
+                            v-if="showHint1Button"
+                            @click="callGemini('hint1')"
+                            :disabled="isLoading"
+                            class="flex-1 bg-yellow-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-yellow-600 transition disabled:opacity-50"
+                        >
+                            힌트 보기 (1)
+                        </button>
+
+                        <!-- 2차 시도 실패 시 -->
+                        <button
+                            v-if="showHint2Button"
+                            @click="callGemini('hint2')"
+                            :disabled="isLoading"
+                            class="flex-1 bg-yellow-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-yellow-700 transition disabled:opacity-50"
+                        >
+                            다른 힌트 보기 (2)
+                        </button>
+                        <button
+                            v-if="showSolutionButton"
+                            @click="callGemini('solution')"
+                            :disabled="isLoading"
+                            class="flex-1 bg-green-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                        >
+                            해설 보기
+                        </button>
+
+                        <!-- 정답 맞췄거나 2번 틀렸을 때 -->
+                        <button
+                            v-if="isAnswerDisabled"
+                            @click="startQuiz(selectedCategory)"
+                            class="w-full mt-4 bg-gray-800 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-900 transition"
+                        >
+                            다음 문제 풀기 &rarr;
+                        </button>
+                    </div>
+                </div>
+            </section>
+
         </div>
     </div>
 
     <script type="module">
-        // Vue 3 Composition API 사용
-        const { createApp, ref, onMounted, computed, nextTick, watch } = Vue;
-
-        // [MODIFIED]: 하드코딩된 problemsData 배열을 삭제합니다.
-        // const problemsData = [...];
+        const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
 
         createApp({
+            
             setup() {
-                // --- 상태 (Reactivity) ---
-                const allProblems = ref([]); // 전체 문제 은행
-                const isLoading = ref(true); // 데이터 로딩 여부
-                const currentProblem = ref(null); // 현재 문제 객체
-                const userAnswer = ref(''); // 사용자 입력 답
-                const feedback = ref(''); // 정답/오답 피드백
-                const isCorrect = ref(false); // 정답 여부
-                const appState = ref('solving'); // 앱 상태 (solving, answered, finished)
-                const currentLevel = ref(3.0); // 학생의 현재 레벨 (1~5)
-                const answeredProblems = ref(new Set()); // 푼 문제 ID Set
+                // --- API 및 인증 ---
+                const apiKey = ref(''); // Gemini API 키
+                const apiKeyInput = ref(''); // API 키 입력 필드용
+                const isApiKeySet = ref(false); // [FIX] 이 줄이 누락되었습니다.
                 
-                // [NEW] API 키 관련 상태
-                const showApiKeyModal = ref(false);
-                const apiKeyInput = ref('');
+                // --- 문제 데이터 ---
+                const problems = ref([]); // 원본 문제 데이터
+                const userRatings = ref({}); // 사용자 ELO 점수
+                const selectedCategory = ref(''); // 현재 선택된 카테고리
+                const currentProblem = ref(null); // 현재 출제된 문제
 
-                // AI 관련 상태
-                const isAiLoading = ref(false); // AI 응답 로딩 여
-                const aiHint = ref(''); // [FIXED] AI 생성 힌트 변수 정의 추가
-                const aiExplanation = ref(''); // AI 생성 추가 해설
+                // --- 문제 풀이 상태 ---
+                const userAnswer = ref(''); // 사용자 답안
+                const attemptCount = ref(0); // 시도 횟수
+                const feedback = ref(''); // 정답/오답 피드백
+                const geminiResponse = ref(''); // AI 응답 (힌트/해설)
+                const isLoading = ref(false); // 로딩 상태 (API 호출)
 
-                // --- 계산된 속성 (Computed) ---
-                const progressPercentage = computed(() => {
-                    if (allProblems.value.length === 0) return 0;
-                    return (answeredProblems.value.size / allProblems.value.length) * 100;
+                // --- 캔버스 상태 ---
+                const canvas = ref(null);
+                const ctx = ref(null);
+                const isDrawing = ref(false);
+                const canvasHeight = ref(300); // 캔버스 높이 (CSS 픽셀)
+                const isEraser = ref(false); // 지우개 모드
+
+                // [FIX] LaTeX 렌더링을 위한 DOM 요소 ref
+                const problemContainer = ref(null);
+                const geminiContainer = ref(null);
+
+                // [FIX] currentProblem이 변경될 때마다 MathJax 렌더링 (v-html 대신 ref 사용)
+                watch(currentProblem, (newProblem) => {
+                    nextTick(() => {
+                        if (newProblem && problemContainer.value) {
+                            // 1. 수동으로 DOM 업데이트
+                            problemContainer.value.innerHTML = newProblem.question;
+                            // 2. 해당 요소만 MathJax로 렌더링
+                            if (window.MathJax) {
+                                MathJax.texReset(); // [FIX-1] 상태 리셋 추가
+                                window.MathJax.typesetPromise([problemContainer.value])
+                                    .catch((err) => console.error('MathJax (문제) 렌더링 오류:', err));
+                            }
+                        } else if (!newProblem && problemContainer.value) {
+                            // 문제가 없을 때 (단원 선택 화면으로 돌아갈 때)
+                            problemContainer.value.innerHTML = '';
+                        }
+                    });
                 });
 
-                // --- [NEW] 쿠키 헬퍼 함수 ---
+                // [FIX] Gemini 응답이 변경될 때마다 MathJax 렌더링
+                watch(geminiResponse, (newResponse) => {
+                    nextTick(() => {
+                        // geminiContainer가 DOM에 마운트된 후 (v-if="geminiResponse") 실행됨
+                        if (newResponse && geminiContainer.value) {
+                            // 1. 수동으로 DOM 업데이트
+                            geminiContainer.value.innerHTML = newResponse;
+                            // 2. 해당 요소만 MathJax로 렌더링
+                            if (window.MathJax) {
+                                MathJax.texReset(); // [FIX-1] 상태 리셋 추가
+                                window.MathJax.typesetPromise([geminiContainer.value])
+                                    .catch((err) => console.error('MathJax (응답) 렌더링 오류:', err));
+                            }
+                        } else if (!newResponse && geminiContainer.value) {
+                            // 응답이 비워졌을 때 (다음 문제 등)
+                            geminiContainer.value.innerHTML = '';
+                        }
+                    });
+                });
+
+                // --- Computed: 계산된 속성 ---
+
+                // 문제 JSON에서 고유한 카테고리 목록 추출
+                const availableCategories = computed(() => {
+                    const categories = problems.value.map(p => p.category);
+                    return [...new Set(categories)];
+                });
+
+                // 정답/오답에 따른 피드백 메시지 스타일
+                const feedbackClass = computed(() => {
+                    if (feedback.value.includes('정답')) return 'bg-green-100 text-green-700';
+                    if (feedback.value.includes('틀렸')) return 'bg-red-100 text-red-700';
+                    return 'bg-gray-100 text-gray-700';
+                });
+
+                // 답안 입력창 비활성화 조건
+                const isAnswerDisabled = computed(() => {
+                    return attemptCount.value >= 2 || feedback.value.includes('정답');
+                });
+                
+                // --- 상황별 버튼 표시 로직 ---
+                const showHint1Button = computed(() => {
+                    return attemptCount.value === 1 && !feedback.value.includes('정답');
+                });
+                const showHint2Button = computed(() => {
+                    return attemptCount.value === 2 && !feedback.value.includes('정답');
+                });
+                const showSolutionButton = computed(() => {
+                    return attemptCount.value === 2 && !feedback.value.includes('정답');
+                });
+
+
+                // --- Methods: 함수 ---
+
+                // [FIX-2] Markdown 파서 옵션 설정
+                if (window.marked) {
+                    marked.setOptions({
+                        breaks: true // \n을 <br>로 변환 (GitHub 스타일)
+                    });
+                }
+
+                // MathJax 렌더링 큐에 등록 (이제 사용되지 않음, watch가 직접 처리)
+                // const queueMathJaxTypeset = () => { ... };
+
+                // API 호출 지수 백오프
+                const fetchWithBackoff = async (url, options, retries = 5, delay = 1000) => {
+                    try {
+                        const response = await fetch(url, options);
+                        if (!response.ok) {
+                            // 429 (Too Many Requests) 또는 5xx (Server Error)일 때만 재시도
+                            if ((response.status === 429 || response.status >= 500) && retries > 0) {
+                                // console.log(`API ${response.status} 오류, ${delay}ms 후 재시도... (${retries}회 남음)`);
+                                await new Promise(resolve => setTimeout(resolve, delay));
+                                return fetchWithBackoff(url, options, retries - 1, delay * 2); // 딜레이 2배 증가
+                            }
+                            // 그 외 4xx 오류 등은 즉시 실패 처리
+                            throw new Error(`API 오류: ${response.status} ${response.statusText}`);
+                        }
+                        return response.json();
+                    } catch (error) {
+                        // 네트워크 오류 등
+                        if (retries > 0) {
+                            // console.log(`네트워크 오류, ${delay}ms 후 재시도... (${retries}회 남음)`);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            return fetchWithBackoff(url, options, retries - 1, delay * 2);
+                        }
+                        // 최종 재시도 실패
+                        throw error;
+                    }
+                };
+
+                
+                // --- 1. 인증 및 데이터 로드 ---
+                
+                // 쿠키 설정
                 const setCookie = (name, value, days) => {
                     let expires = "";
                     if (days) {
                         const date = new Date();
-                        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                        date.setTime(date.getTime() + (days*24*60*60*1000));
                         expires = "; expires=" + date.toUTCString();
                     }
-                    document.cookie = name + "=" + (value || "") + expires + "; path=/; SameSite=Lax; Secure";
+                    document.cookie = name + "=" + (value || "")  + expires + "; path=/; SameSite=Lax; Secure";
                 };
 
+                // 쿠키 가져오기
                 const getCookie = (name) => {
                     const nameEQ = name + "=";
                     const ca = document.cookie.split(';');
-                    for(let i = 0; i < ca.length; i++) {
+                    for(let i=0; i < ca.length; i++) {
                         let c = ca[i];
-                        while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-                        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+                        while (c.charAt(0)==' ') c = c.substring(1,c.length);
+                        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
                     }
                     return null;
                 };
 
-                const eraseCookie = (name) => {
-                    document.cookie = name + '=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+                // API 키 설정 (입력값 -> 상태 -> 쿠키)
+                const setApiKey = () => {
+                    if (apiKeyInput.value.trim()) {
+                        apiKey.value = apiKeyInput.value.trim();
+                        setCookie('geminiApiKey', apiKey.value, 30); // 30일간 저장
+                        isApiKeySet.value = true;
+                        apiKeyInput.value = '';
+                    } else {
+                        alert("API 키를 입력해주세요.");
+                    }
                 };
 
+                // API 키 지우기 (쿠키 삭제)
+                const clearApiKey = () => {
+                    setCookie('geminiApiKey', '', -1); // 쿠키 만료
+                    apiKey.value = '';
+                    isApiKeySet.value = false;
+                };
 
-                // --- Gemini API 호출 로직 ---
-                const callGeminiAPI = async (userPrompt, systemPrompt, retries = 3, delay = 1000) => {
-                    isAiLoading.value = true;
+                // 문제 JSON 파일 비동기 로드
+                const fetchProblems = async () => {
+                    try {
+                        const response = await fetch('https://raw.githubusercontent.com/corecreaters/laughing-octo-rotary-phone/refs/heads/main/problem2.json');
+                        if (!response.ok) throw new Error('문제 데이터를 불러올 수 없습니다.');
+                        const data = await response.json();
+                        problems.value = data;
+                        initializeUserRatings();
+                    } catch (error) {
+                        console.error(error);
+                        feedback.value = "오류: 문제 데이터를 불러오지 못했습니다.";
+                    }
+                };
+                
+                // ELO 점수 초기화 (문제 로드 완료 시)
+                const initializeUserRatings = () => {
+                    const ratings = {};
+                    availableCategories.value.forEach(cat => {
+                        // 쿠키에서 저장된 점수 확인
+                        const savedRating = getCookie(`elo_${cat}`);
+                        ratings[cat] = savedRating ? parseInt(savedRating, 10) : 3;
+                    });
+                    userRatings.value = ratings;
+                };
+
+                // --- 2. 퀴즈 로직 ---
+
+                // 퀴즈 시작 (카테고리 선택 시)
+                const startQuiz = (category) => {
+                    selectedCategory.value = category;
+                    selectProblem();
+                    nextTick(() => {
+                        initCanvas();
+                        // DOM이 렌더링된 후 MathJax 호출 (요청 1 수정) -> (요청 1 재수정) 여기서 호출 제거
+                        // queueMathJaxTypeset(); 
+                    });
+                };
+                
+                // 퀴즈 상태 초기화 (다음 문제)
+                const resetQuizState = () => {
+                    userAnswer.value = '';
+                    attemptCount.value = 0;
+                    feedback.value = '';
+                    geminiResponse.value = '';
+                    clearCanvas();
+                };
+
+                // ELO 점수에 맞는 문제 선택
+                const selectProblem = () => {
+                    const elo = userRatings.value[selectedCategory.value];
+                    const categoryProblems = problems.value.filter(p => p.category === selectedCategory.value);
                     
-                    // [MODIFIED] 쿠키에서 API 키 가져오기
-                    const apiKey = getCookie("geminiApiKey");
-                    
-                    // [MODIFIED] API 키가 없으면 모달 표시
-                    if (!apiKey) {
-                        showApiKeyModal.value = true;
-                        isAiLoading.value = false;
-                        feedback.value = "Gemini API 키를 먼저 입력해주세요.";
-                        return "API 키가 필요합니다.";
+                    if (categoryProblems.length === 0) {
+                        feedback.value = "이 카테고리에 더 이상 풀 문제가 없습니다.";
+                        currentProblem.value = null;
+                        return;
                     }
 
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+                    let matches = [];
+                    const maxDifficulty = 5;
+                    
+                    // 1. ELO 점수와 정확히 일치하는 문제 탐색
+                    matches = categoryProblems.filter(p => p.difficulty === elo);
 
-                    const payload = {
-                        contents: [{ parts: [{ text: userPrompt }] }],
-                        systemInstruction: {
-                            parts: [{ text: systemPrompt }]
-                        },
-                    };
+                    // 2. (예외 처리) 일치하는 문제가 없다면, 근접한 난이도 탐색
+                    if (matches.length === 0) {
+                        for (let offset = 1; offset <= maxDifficulty; offset++) {
+                            const lower = categoryProblems.filter(p => p.difficulty === elo - offset);
+                            const upper = categoryProblems.filter(p => p.difficulty === elo + offset);
+                            matches = [...lower, ...upper];
+                            
+                            // 근접 문제 발견 시 반복 중단
+                            if (matches.length > 0) break;
+                        }
+                    }
+
+                    // 3. (안전 장치) 그래도 문제가 없다면, 해당 카테고리의 모든 문제 중 무작위 선택
+                    if (matches.length === 0) {
+                        matches = categoryProblems;
+                    }
+
+                    // 4. 선택된 문제 리스트에서 무작위로 하나를 선택
+                    currentProblem.value = matches[Math.floor(Math.random() * matches.length)];
+                    resetQuizState(); // 문제 선택 후 상태 초기화
+                    // queueMathJaxTypeset(); // (요청 1 수정) -> (요청 1 재수정) 여기서 호출 제거
+                };
+
+                // 답안 제출
+                const submitAnswer = () => {
+                    if (!userAnswer.value.trim()) {
+                        feedback.value = "답을 입력해주세요.";
+                        return;
+                    }
+
+                    const isCorrect = userAnswer.value.trim() === currentProblem.value.answer;
+                    attemptCount.value++;
+                    
+                    if (isCorrect) {
+                        feedback.value = `정답입니다! (${attemptCount.value}번째 시도)`;
+                        const score = (attemptCount.value === 1) ? 1.0 : 0.5;
+                        updateElo(score);
+                    } else {
+                        if (attemptCount.value === 1) {
+                            feedback.value = "틀렸습니다. 다시 시도해보세요.";
+                        } else {
+                            feedback.value = `틀렸습니다. 정답은 ${currentProblem.value.answer} 입니다.`;
+                            const score = 0.0;
+                            updateElo(score);
+                        }
+                    }
+                };
+
+                // ELO 점수 업데이트
+                const updateElo = (score) => {
+                    const category = selectedCategory.value;
+                    let currentRating = userRatings.value[category];
+                    
+                    // 요구사항: 0~5 정수, ELO 방식 B (1.0=승, 0.5=무, 0.0=패)
+                    // 가장 단순한 ELO 매핑: 승리 시 +1, 패배 시 -1, 무승부 시 0
+                    let newRating = currentRating;
+                    if (score === 1.0) {
+                        newRating = Math.min(5, currentRating + 1); // 5점 초과 방지
+                    } else if (score === 0.0) {
+                        newRating = Math.max(0, currentRating - 1); // 0점 미만 방지
+                    }
+                    // score === 0.5 (무승부)일 때는 점수 변동 없음
+
+                    userRatings.value[category] = newRating;
+                    
+                    // ELO 점수를 쿠키에 저장
+                    setCookie(`elo_${category}`, newRating, 365);
+                };
+                
+                // --- 3. Gemini API 호출 ---
+                
+                // Gemini API 호출 메인 함수
+                const callGemini = async (promptType) => {
+                    isLoading.value = true;
+                    geminiResponse.value = '';
+                    
+                    let systemPrompt = "당신은 학생들을 돕는 친절하고 명확한 고등학교 수학 선생님입니다.";
+                    let userQuery = "";
+                    let payload = {};
+
+                    const { question, answer } = currentProblem.value;
+
+                    // 요청 유형에 따른 프롬프트 구성
+                    switch (promptType) {
+                        case 'hint1':
+                            userQuery = `다음 수학 문제를 풀어야 합니다.
+[문제]: ${question}
+학생이 문제를 풀 수 있도록, 정답이나 전체 풀이 과정을 직접적으로 알려주지 않는 '첫 번째 힌트'를 한두 문장으로 제공해주세요. 어떤 공식이나 개념을 사용해야 하는지 알려주는 것이 좋습니다.`;
+                            break;
+                        case 'hint2':
+                            userQuery = `다음 수학 문제를 풀어야 합니다.
+[문제]: ${question}
+학생이 이미 첫 번째 힌트를 봤지만 여전히 어려워합니다. 정답을 알려주지 않으면서, 문제 해결에 결정적인 '추가 힌트'를 한두 문장으로 제공해주세요.`;
+                            break;
+                        case 'solution':
+                            userQuery = `다음 수학 문제의 정답과 상세한 풀이 과정을 단계별로 설명해주세요.
+[문제]: ${question}
+[정답]: ${answer}
+수식은 LaTeX 형식을 사용해주세요. (예: $f(x)$)`;
+                            break;
+                        case 'feedback':
+                            systemPrompt = "당신은 학생의 수학 풀이 과정을 첨삭하는 전문 선생님입니다. 수식은 LaTeX 형식을 사용해주세요.";
+                            const imageData = canvas.value.toDataURL('image/png').split(',')[1]; // Base64 데이터 추출
+                            userQuery = `아래 [문제]에 대한 [학생의 필기 풀이 과정] 이미지입니다.
+[문제]: ${question}
+[학생의 풀이 과정]:
+학생의 풀이 과정을 검토하고, 다음 항목에 대해 피드백해주세요.
+1. **접근 방식:** 올바른 방향으로 접근했나요?
+2. **오류 지점:** (틀렸다면) 계산 실수나 개념 오류가 발생한 지점을 정확히 짚어주세요.
+3. **격려 및 조언:** 학생에게 격려와 함께 어떤 점을 보완하면 좋을지 조언해주세요.`;
+                            
+                            payload = {
+                                contents: [{
+                                    parts: [
+                                        { "text": userQuery },
+                                        { "inlineData": { "mimeType": "image/png", "data": imageData } }
+                                    ]
+                                }],
+                                systemInstruction: { parts: [{ text: systemPrompt }] },
+                            };
+                            break;
+                    }
+                    
+                    // 'feedback'이 아닌 경우의 payload
+                    if (promptType !== 'feedback') {
+                        payload = {
+                            contents: [{ parts: [{ text: userQuery }] }],
+                            systemInstruction: { parts: [{ text: systemPrompt }] },
+                        };
+                    }
+                    
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey.value}`;
 
                     try {
-                        const response = await fetch(apiUrl, {
+                        const result = await fetchWithBackoff(apiUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
                         });
-
-                        if (!response.ok) {
-                            if (response.status === 400) { // 400 Bad Request (잘못된 API 키 등)
-                                eraseCookie("geminiApiKey"); // 잘못된 키 삭제
-                                showApiKeyModal.value = true;
-                                feedback.value = "잘못된 API 키입니다. 다시 입력해주세요.";
-                                return "잘못된 API 키";
-                            }
-                            if (response.status === 429 && retries > 0) { // 429: Too Many Requests
-                                console.warn(`API rate limit. Retrying in ${delay / 1000}s... (${retries} retries left)`);
-                                await new Promise(res => setTimeout(res, delay));
-                                return callGeminiAPI(userPrompt, systemPrompt, retries - 1, delay * 2); // Exponential backoff
-                            }
-                            throw new Error(`API Error: ${response.statusText} (Status: ${response.status})`);
-                        }
-
-                        const result = await response.json();
-                        const candidate = result.candidates?.[0];
-
-                        if (candidate && candidate.content?.parts?.[0]?.text) {
-                            return candidate.content.parts[0].text;
+                        
+                        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (text) {
+                            // [FIX-2] API 응답을 Markdown으로 파싱
+                            geminiResponse.value = marked.parse(text); 
+                            // [FIX] queueMathJaxTypeset(); // 호출 제거 (watch가 처리)
                         } else {
-                            // [MODIFIED] API 응답 구조 오류에 대한 구체적인 피드백
-                            console.error("Unexpected API response structure:", result);
-                            if (result.error) {
-                                return `API 오류: ${result.error.message}`;
-                            }
-                            throw new Error("API로부터 유효한 텍스트 응답을 받지 못했습니다.");
+                            throw new Error("API로부터 유효한 응답을 받지 못했습니다.");
                         }
                     } catch (error) {
-                        console.error("Gemini API 호출 오류:", error);
-                        return "AI 응답을 가져오는 데 실패했습니다. 네트워크 연결 또는 API 키를 확인해 주세요.";
-                    } finally {
-                        isAiLoading.value = false;
-                    }
-                };
-
-                // --- 메서드 (Methods) ---
-
-                // [NEW] API 키 저장
-                const saveApiKey = () => {
-                    if (apiKeyInput.value.trim()) {
-                        setCookie("geminiApiKey", apiKeyInput.value.trim(), 30); // 30일간 저장
-                        showApiKeyModal.value = false;
-                        apiKeyInput.value = '';
-                        feedback.value = "API 키가 저장되었습니다. 이제 AI 기능을 사용할 수 있습니다.";
-                    } else {
-                        feedback.value = "API 키를 입력해주세요.";
-                    }
-                };
-
-                // [NEW] API 키 삭제
-                const clearApiKey = () => {
-                    eraseCookie("geminiApiKey");
-                    showApiKeyModal.value = true;
-                    feedback.value = "API 키가 삭제되었습니다. 새로 입력해주세요.";
-                };
-
-                // KaTeX 수학 공식 렌더링 함수
-                const renderMathematics = () => {
-                    // nextTick을 사용해 DOM 업데이트가 완료된 후 KaTeX 렌더링
-                    nextTick(() => {
-                        try {
-                            // 렌더링이 필요한 모든 컨텐츠 영역
-                            // [MODIFIED] #explanation-content 제거
-                            const idsToRender = ['#question-content', '#hint-content', '#ai-explanation-content'];
-                            idsToRender.forEach(id => {
-                                const el = document.querySelector(id);
-                                if (el) {
-                                    renderMathInElement(el, {
-                                        delimiters: [
-                                            { left: '$$', right: '$$', display: true },
-                                            { left: '\\[', right: '\\]', display: true },
-                                            { left: '$', right: '$', display: false },
-                                            { left: '\\(', right: '\\)', display: false }
-                                        ],
-                                        throwOnError: false
-                                    });
-                                }
-                            });
-                        } catch (error) {
-                            console.error("KaTeX 렌더링 오류:", error);
-                        }
-                    });
-                };
-                
-                // [MODIFIED] 1. 문제 데이터 불러오기
-                // fetch를 사용하여 외부 URL에서 데이터를 불러옵니다.
-                const loadProblems = async () => {
-                    isLoading.value = true;
-                    // 앱 상태 초기화 (다시 풀기 시)
-                    answeredProblems.value.clear();
-                    currentLevel.value = 3.0;
-                    
-                    try {
-                        // [MODIFIED] 사용자가 제공한 새 URL로 fetch 요청
-                        const response = await fetch("https://raw.githubusercontent.com/corecreaters/laughing-octo-rotary-phone/refs/heads/main/problem2.json");
-                        
-                        if (!response.ok) {
-                            // JSON 파싱 오류는 여기서 잡히지 않고, .json()에서 잡힘
-                            // 네트워크 오류만 여기서 잡힘
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
-                        
-                        const data = await response.json(); // 여기서 JSON 파싱 오류 발생 가능
-                        allProblems.value = data;
-                        
-                        if (allProblems.value.length > 0) {
-                            selectNextProblem();
-                        } else {
-                            appState.value = 'finished'; // 풀 문제가 없음
-                        }
-                    } catch (error) {
-                        console.error("문제 로딩 실패:", error); // 콘솔에 자세한 오류 출력
-                        // 사용자에게 보여지는 피드백
-                        feedback.value = `문제 로딩 중 오류가 발생했습니다. (오류: ${error.message})`;
+                        console.error('Gemini API 호출 오류:', error);
+                        geminiResponse.value = `오류가 발생했습니다: ${error.message}. API 키를 확인하거나 나중에 다시 시도해주세요.`;
                     } finally {
                         isLoading.value = false;
                     }
                 };
 
-                // 2. 다음 문제 선택 (핵심 로직)
-                // [MODIFIED] 알고리즘 수정:
-                // 현재 레벨(currentLevel)과 난이도(difficulty)의 차이가
-                // 가장 적은 문제를 선택하도록 변경합니다.
-                const selectNextProblem = () => {
-                    // 풀지 않은 문제 필터링
-                    const unsolvedProblems = allProblems.value.filter(
-                        p => !answeredProblems.value.has(p.id)
-                    );
-
-                    if (unsolvedProblems.length === 0) {
-                        appState.value = 'finished'; // 모든 문제를 다 풂
-                        currentProblem.value = null;
-                        return;
-                    }
-
-                    // [NEW LOGIC]
-                    // 풀지 않은 문제들을 (현재 레벨 - 문제 난이도)의 절대값 기준으로 오름차순 정렬합니다.
-                    const sortedProblems = unsolvedProblems.sort((a, b) => {
-                        const diffA = Math.abs(a.difficulty - currentLevel.value);
-                        const diffB = Math.abs(b.difficulty - currentLevel.value);
-                        return diffA - diffB;
-                    });
+                // --- 4. 캔버스 로직 ---
+                
+                // --- 4. 캔버스 로직 (요청 2, 3 반영) ---
+                
+                // 펜/지우개 모드 설정 헬퍼 (요청 3)
+                const setDrawingMode = () => {
+                    if (!ctx.value) return;
                     
-                    // 정렬된 목록의 첫 번째 문제 (가장 근접한 문제)를 선택합니다.
-                    const nextProblem = sortedProblems[0];
-
-                    currentProblem.value = nextProblem;
-                    if (!answeredProblems.value.has(nextProblem.id)) {
-                        // 이 문제는 이제 막 풀기 시작함
-                    }
-                    resetProblemState();
-                };
-
-                // 3. 문제 상태 초기화
-                const resetProblemState = () => {
-                    appState.value = 'solving';
-                    userAnswer.value = '';
-                    feedback.value = '';
-                    isCorrect.value = false;
-                    // [REMOVED]
-                    // showExplanationContent.value = false;
-                    aiHint.value = ''; // AI 상태 초기화
-                    aiExplanation.value = ''; // AI 상태 초기화
-                };
-
-                // 4. 답변 제출
-                const submitAnswer = () => {
-                    if (!userAnswer.value.trim()) {
-                        feedback.value = "답을 입력해 주세요.";
-                        isCorrect.value = false;
-                        return;
-                    }
-                    
-                    // 간단한 정답 비교 (공백 제거, 대소문자 무시)
-                    // (정답 포맷이 'x > 3' 같이 다양할 수 있으므로, 실제로는 더 정교한 비교 필요)
-                    const processedAnswer = String(currentProblem.value.answer).trim().toLowerCase();
-                    const processedUserAnswer = userAnswer.value.trim().toLowerCase();
-
-                    if (processedUserAnswer === processedAnswer) {
-                        feedback.value = "정답입니다! 🎉";
-                        isCorrect.value = true;
-                        appState.value = 'answered';
-                        answeredProblems.value.add(currentProblem.value.id);
-                        // 레벨 조정 (맞춤)
-                        currentLevel.value = Math.min(5, currentLevel.value + 0.2); // 레벨 상승
+                    if (isEraser.value) {
+                        // 지우개 모드
+                        ctx.value.globalCompositeOperation = 'destination-out';
+                        ctx.value.strokeStyle = 'rgba(0,0,0,1)'; // destination-out을 위해 불투명해야 함
+                        ctx.value.lineWidth = 20; // 지우개 크기
                     } else {
-                        feedback.value = "틀렸습니다. 다시 생각해 보세요. 😥";
-                        isCorrect.value = false;
-                        // 레벨 조정 (틀림)
-                        currentLevel.value = Math.max(1, currentLevel.value - 0.2); // 레벨 하락
+                        // 펜 모드
+                        ctx.value.globalCompositeOperation = 'source-over';
+                        ctx.value.strokeStyle = '#374151'; // text-gray-700
+                        ctx.value.lineWidth = 2; // 펜 크기
                     }
+                    ctx.value.lineCap = 'round';
                 };
 
-                // 5. AI 힌트 요청
-                const requestAiHint = async () => {
-                    if (isAiLoading.value) return;
-                    
-                    // [MODIFIED] AI가 HTML이 아닌 Markdown 형식으로 응답하도록 systemPrompt 수정
-                    const systemPrompt = "당신은 친절하고 전문적인 수학 튜터입니다. 학생이 문제를 풀 수 있도록 결정적인 힌트가 아닌, 생각의 방향을 이끌어주는 짧은 힌트를 한국어로 제공해 주세요. 응답은 **Markdown 형식**으로 포맷팅해주세요 (예: 줄바꿈, 글머리 기호, **볼드** 등 사용). 수학 공식은 KaTeX 형식($$...$$ 또는 $...$)을 사용해야 합니다.";
-                    
-                    // [MODIFIED] userPrompt에서 hints 참조 제거
-                    const userPrompt = `
-                        다음 수학 문제에 대한 힌트를 주세요:
-                        문제: ${currentProblem.value.question}
+                // 지우개 모드 토글 (요청 3)
+                const toggleEraser = () => {
+                    isEraser.value = !isEraser.value;
+                    setDrawingMode();
+                };
+                
+                // 캔버스 늘리기 (요청 2)
+                const expandCanvas = () => {
+                    canvasHeight.value += 150; // 높이 150px 증가
+                };
+                
+                // 캔버스 높이 변경 감지하여 리사이즈 (요청 2)
+                watch(canvasHeight, (newHeight) => {
+                    if (canvas.value && ctx.value) {
+                        const dpr = window.devicePixelRatio || 1;
                         
-                        힌트를 생성해주세요.
-                    `;
-                    // [MODIFIED] AI의 Markdown 응답을 HTML로 파싱
-                    const rawMarkdown = await callGeminiAPI(userPrompt, systemPrompt);
-                    if (rawMarkdown !== "API 키가 필요합니다." && rawMarkdown !== "잘못된 API 키") {
-                        aiHint.value = marked.parse(rawMarkdown || "");
-                    }
-                    
-                    aiExplanation.value = ''; // 다른 섹션 초기화
-                    // [REMOVED]
-                    // showExplanationContent.value = false; // 다른 섹션 초기화
-                };
-
-                // [REMOVED]
-                // 6. 해설 요청 (정적)
-                // const showExplanation = () => { ... };
-
-                // [MODIFIED] 7. AI (추가) 해설 요청 -> AI 해설 요청
-                const requestAiExplanation = async () => {
-                    if (isAiLoading.value) return;
-                    aiHint.value = ''; // 힌트가 있다면 숨김
-
-                    // [MODIFIED] '다른 풀이'가 아닌 '자세한 해설'을 요청 + Markdown 형식 응답 요청
-                    const systemPrompt = "당신은 친절하고 전문적인 수학 튜터입니다. 학생에게 문제의 해설을 단계별로, 이해하기 쉽게 설명해주세요. 한국어로 설명하고, 응답은 **Markdown 형식**으로 포맷팅해주세요 (예: 줄바꿈, 글머리 기호, **볼드** 등 사용). 수학 공식은 KaTeX 형식($$...$$ 또는 $...$)을 사용해야 합니다.";
-                    const userPrompt = `
-                        다음 수학 문제에 대한 '자세한 해설'을 제공해주세요.
-                        문제: ${currentProblem.value.question}
+                        // 1. 현재 그림 저장
+                        const dataUrl = canvas.value.toDataURL();
                         
-                        해설을 생성해주세요.
-                    `;
-                    // [MODIFIED] AI의 Markdown 응답을 HTML로 파싱
-                    const rawMarkdown = await callGeminiAPI(userPrompt, systemPrompt);
-                     if (rawMarkdown !== "API 키가 필요합니다." && rawMarkdown !== "잘못된 API 키") {
-                        aiExplanation.value = marked.parse(rawMarkdown || "");
+                        // 2. 캔버스 물리적 크기 조절
+                        // (너비도 창 크기에 맞춰 다시 계산)
+                        const rect = canvas.value.getBoundingClientRect();
+                        canvas.value.width = rect.width * dpr;
+                        canvas.value.height = newHeight * dpr;
+                        
+                        // 3. 컨텍스트 스케일 재설정 (리사이즈 시 초기화됨)
+                        ctx.value.scale(dpr, dpr);
+                        
+                        // 4. 배경색 다시 채우기
+                        clearCanvas();
+                        
+                        // 5. 펜/지우개 모드 재설정
+                        setDrawingMode(); 
+                        
+                        // 6. 저장한 그림 다시 그리기
+                        const img = new Image();
+                        img.onload = () => {
+                            // (컨텍스트가 dpr로 스케일되었으므로, 0,0에 그리면 CSS 픽셀에 맞게 그려짐)
+                            ctx.value.drawImage(img, 0, 0); 
+                        };
+                        img.src = dataUrl;
                     }
+                });
+
+                // 캔버스 초기화
+                const initCanvas = () => {
+                    const canvasEl = document.getElementById('drawing-canvas');
+                    if (!canvasEl) return;
+                    
+                    canvas.value = canvasEl;
+                    ctx.value = canvasEl.getContext('2d');
+                    
+                    // 캔버스 해상도 조절 (레티나 디스플레이 대응)
+                    const dpr = window.devicePixelRatio || 1;
+                    const rect = canvasEl.getBoundingClientRect();
+                    canvasEl.width = rect.width * dpr;
+                    canvasEl.height = canvasHeight.value * dpr; // (요청 2) ref 값 사용
+                    
+                    ctx.value.scale(dpr, dpr); // (중요) 컨텍스트를 CSS 픽셀 기준으로 스케일
+                    
+                    clearCanvas(); // 캔버스 초기화
+                    setDrawingMode(); // (요청 3) 펜/지우개 모드 설정
+                    
+                    // 이벤트 리스너 등록
+                    canvasEl.addEventListener('mousedown', startDrawing);
+                    canvasEl.addEventListener('mousemove', draw);
+                    canvasEl.addEventListener('mouseup', stopDrawing);
+                    canvasEl.addEventListener('mouseout', stopDrawing);
+                    
+                    canvasEl.addEventListener('touchstart', startDrawing);
+                    canvasEl.addEventListener('touchmove', draw);
+                    canvasEl.addEventListener('touchend', stopDrawing);
                 };
 
-                // --- 생명주기 (Lifecycle) ---
-                onMounted(() => {
-                    // [MODIFIED] 앱 시작 시 API 키 확인
-                    if (!getCookie("geminiApiKey")) {
-                        showApiKeyModal.value = true;
+                // 캔버스 이벤트 좌표 보정 (버그 수정)
+                const getEventPosition = (e) => {
+                    const rect = canvas.value.getBoundingClientRect();
+                    let clientX, clientY;
+                    if (e.touches) {
+                        clientX = e.touches[0].clientX;
+                        clientY = e.touches[0].clientY;
+                    } else {
+                        clientX = e.clientX;
+                        clientY = e.clientY;
                     }
-
-                    // KaTeX가 로드되었는지 확인
-                    const checkKatex = () => {
-                        if (window.renderMathInElement) {
-                            loadProblems(); // KaTeX 준비 완료 후 문제 로드
-                        } else {
-                            setTimeout(checkKatex, 100); // 0.1초 후 다시 확인
-                        }
+                    // 컨텍스트가 dpr로 스케일되었으므로, CSS 픽셀 좌표 반환
+                    return {
+                        x: clientX - rect.left,
+                        y: clientY - rect.top
                     };
-                    checkKatex();
+                };
+
+                // 그리기 시작
+                const startDrawing = (e) => {
+                    e.preventDefault();
+                    isDrawing.value = true;
+                    const { x, y } = getEventPosition(e);
+                    ctx.value.beginPath();
+                    ctx.value.moveTo(x, y);
+                };
+                
+                // 그리기
+                const draw = (e) => {
+                    if (!isDrawing.value) return;
+                    e.preventDefault();
+                    const { x, y } = getEventPosition(e);
+                    ctx.value.lineTo(x, y);
+                    ctx.value.stroke();
+                };
+
+                // 그리기 중지
+                const stopDrawing = () => {
+                    if (isDrawing.value) {
+                        ctx.value.closePath();
+                        isDrawing.value = false;
+                    }
+                };
+                
+                // 캔버스 지우기
+                const clearCanvas = () => {
+                    if (ctx.value && canvas.value) {
+                        // 흰색 배경으로 채우기 (투명 PNG 방지)
+                        ctx.value.fillStyle = '#f9fafb'; // bg-gray-50
+                        ctx.value.fillRect(0, 0, canvas.value.width, canvas.value.height);
+                    }
+                };
+
+                // 캔버스 피드백 요청
+                const getCanvasFeedback = () => {
+                    if (isLoading.value) return;
+                    callGemini('feedback');
+                };
+
+                // --- 5. 마운트 ---
+                
+                onMounted(() => {
+                    // 1. 쿠키에서 API 키 확인
+                    const savedKey = getCookie('geminiApiKey');
+                    if (savedKey) {
+                        apiKey.value = savedKey;
+                        isApiKeySet.value = true;
+                    }
+                    
+                    // 2. 문제 데이터 로드
+                    fetchProblems();
                 });
 
-                // --- 감시자 (Watchers) ---
-                // AI 힌트, 해설, 문제가 변경될 때마다 KaTeX를 다시 렌더링
-                // [MODIFIED] showExplanationContent 제거
-                watch([currentProblem, aiHint, aiExplanation], () => {
-                    renderMathematics();
-                }, {
-                    deep: true // 객체 내부 변경 감지
-                });
-
-                // --- 반환 (Return) ---
+                // Vue 인턴스가 반환할 데이터와 함수들
                 return {
-                    // 상태
-                    isLoading,
-                    appState,
+                    apiKey,
+                    apiKeyInput,
+                    isApiKeySet,
+                    problems,
+                    userRatings,
+                    selectedCategory,
                     currentProblem,
                     userAnswer,
+                    attemptCount,
                     feedback,
-                    isCorrect,
-                    currentLevel,
-                    answeredProblems,
-                    allProblems,
-                    showApiKeyModal,
-                    apiKeyInput,
-                    isAiLoading,
-                    aiHint,
-                    aiExplanation,
-                    
-                    // 계산된 속성
-                    progressPercentage,
-
-                    // 메서드
-                    loadProblems,
-                    selectNextProblem,
+                    geminiResponse,
+                    isLoading,
+                    availableCategories,
+                    feedbackClass,
+                    isAnswerDisabled,
+                    showHint1Button,
+                    showHint2Button,
+                    showSolutionButton,
+                    // (요청 2, 3) 추가된 상태 및 함수
+                    canvasHeight,
+                    isEraser,
+                    toggleEraser,
+                    expandCanvas,
+                    // [FIX] 렌더링을 위한 ref 추가
+                    problemContainer,
+                    geminiContainer,
+                    //
+                    setApiKey,
+                    clearApiKey,
+                    startQuiz,
                     submitAnswer,
-                    requestAiHint,
-                    requestAiExplanation,
-                    saveApiKey,
-                    clearApiKey
+                    callGemini,
+                    initCanvas,
+                    clearCanvas,
+                    getCanvasFeedback
                 };
             }
         }).mount('#app');
