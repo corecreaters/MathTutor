@@ -760,10 +760,38 @@
                     clearCanvas();
                 };
 
+                // LocalStorage에서 풀었던 문제 ID 목록 가져오기
+                const getSolvedProblemIds = () => {
+                    try {
+                        const saved = localStorage.getItem('solvedProblemIds');
+                        return saved ? JSON.parse(saved) : [];
+                    } catch (error) {
+                        console.error('LocalStorage 읽기 오류:', error);
+                        return [];
+                    }
+                };
+
+                // LocalStorage에 풀었던 문제 ID 저장하기
+                const saveSolvedProblemId = (problemId) => {
+                    try {
+                        const solvedIds = getSolvedProblemIds();
+                        if (!solvedIds.includes(problemId)) {
+                            solvedIds.push(problemId);
+                            localStorage.setItem('solvedProblemIds', JSON.stringify(solvedIds));
+                        }
+                    } catch (error) {
+                        console.error('LocalStorage 저장 오류:', error);
+                    }
+                };
+
                 // ELO 점수에 맞는 문제 선택
                 const selectProblem = () => {
                     const elo = userRatings.value[selectedCategory.value];
-                    const categoryProblems = problems.value.filter(p => p.category === selectedCategory.value);
+                    const solvedIds = getSolvedProblemIds();
+                    // 이미 풀었던 문제 제외
+                    const categoryProblems = problems.value.filter(p => 
+                        p.category === selectedCategory.value && !solvedIds.includes(p.id)
+                    );
                     
                     if (categoryProblems.length === 0) {
                         feedback.value = "이 카테고리에 더 이상 풀 문제가 없습니다.";
@@ -815,6 +843,8 @@
                         // 첫 번째 시도 성공: +1, 두 번째 시도 성공: +0.4
                         const eloChange = (attemptCount.value === 1) ? 1.0 : 0.4;
                         updateElo(eloChange);
+                        // 풀었던 문제 ID를 LocalStorage에 저장
+                        saveSolvedProblemId(currentProblem.value.id);
                     } else {
                         if (attemptCount.value === 1) {
                             feedback.value = "틀렸습니다. 다시 시도해보세요.";
