@@ -760,37 +760,73 @@
                     clearCanvas();
                 };
 
-                // LocalStorage에서 풀었던 문제 ID 목록 가져오기
+                // LocalStorage에서 풀었던 문제 ID 목록 가져오기 (객체 형태로 저장)
                 const getSolvedProblemIds = () => {
                     try {
-                        const saved = localStorage.getItem('solvedProblemIds');
-                        return saved ? JSON.parse(saved) : [];
+                        const saved = localStorage.getItem('solvedProblems');
+                        if (!saved) return {};
+                        const parsed = JSON.parse(saved);
+                        // 객체 형태로 반환 { "1": true, "2": true } 형식
+                        return typeof parsed === 'object' && parsed !== null ? parsed : {};
                     } catch (error) {
                         console.error('LocalStorage 읽기 오류:', error);
-                        return [];
+                        return {};
                     }
                 };
 
-                // LocalStorage에 풀었던 문제 ID 저장하기
+                // 특정 문제 ID가 풀었던 문제인지 확인
+                const isProblemSolved = (problemId) => {
+                    const idStr = String(problemId);
+                    const solvedProblems = getSolvedProblemIds();
+                    
+                    // 객체 형태로 저장된 경우 확인
+                    if (solvedProblems[idStr] === true) {
+                        return true;
+                    }
+                    
+                    // 개별 키로 저장된 경우도 확인 (fallback)
+                    try {
+                        const individualKey = localStorage.getItem(`solved_${idStr}`);
+                        return individualKey === 'true';
+                    } catch (error) {
+                        return false;
+                    }
+                };
+
+                // LocalStorage에 풀었던 문제 ID 저장하기 (객체 형태로 저장)
                 const saveSolvedProblemId = (problemId) => {
                     try {
-                        const solvedIds = getSolvedProblemIds();
-                        if (!solvedIds.includes(problemId)) {
-                            solvedIds.push(problemId);
-                            localStorage.setItem('solvedProblemIds', JSON.stringify(solvedIds));
+                        // 문제 ID를 문자열로 변환하여 타입 통일
+                        const idStr = String(problemId);
+                        const solvedProblems = getSolvedProblemIds();
+                        
+                        // 이미 저장되어 있지 않으면 저장
+                        if (!solvedProblems[idStr]) {
+                            solvedProblems[idStr] = true;
+                            localStorage.setItem('solvedProblems', JSON.stringify(solvedProblems));
+                            console.log('문제 ID 저장됨:', idStr);
+                            console.log('저장된 전체 문제 수:', Object.keys(solvedProblems).length);
+                        } else {
+                            console.log('이미 저장된 문제 ID:', idStr);
                         }
                     } catch (error) {
                         console.error('LocalStorage 저장 오류:', error);
+                        // 오류 발생 시 개별 키로도 시도
+                        try {
+                            localStorage.setItem(`solved_${String(problemId)}`, 'true');
+                            console.log('개별 키로 저장 완료:', `solved_${String(problemId)}`);
+                        } catch (fallbackError) {
+                            console.error('개별 키 저장도 실패:', fallbackError);
+                        }
                     }
                 };
 
                 // ELO 점수에 맞는 문제 선택
                 const selectProblem = () => {
                     const elo = userRatings.value[selectedCategory.value];
-                    const solvedIds = getSolvedProblemIds();
-                    // 이미 풀었던 문제 제외
+                    // 이미 풀었던 문제 제외 (객체 형태로 확인)
                     const categoryProblems = problems.value.filter(p => 
-                        p.category === selectedCategory.value && !solvedIds.includes(p.id)
+                        p.category === selectedCategory.value && !isProblemSolved(p.id)
                     );
                     
                     if (categoryProblems.length === 0) {
@@ -844,7 +880,11 @@
                         const eloChange = (attemptCount.value === 1) ? 1.0 : 0.4;
                         updateElo(eloChange);
                         // 풀었던 문제 ID를 LocalStorage에 저장
-                        saveSolvedProblemId(currentProblem.value.id);
+                        if (currentProblem.value && currentProblem.value.id !== undefined && currentProblem.value.id !== null) {
+                            saveSolvedProblemId(currentProblem.value.id);
+                        } else {
+                            console.warn('문제 ID가 없어서 저장할 수 없습니다:', currentProblem.value);
+                        }
                     } else {
                         if (attemptCount.value === 1) {
                             feedback.value = "틀렸습니다. 다시 시도해보세요.";
